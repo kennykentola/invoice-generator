@@ -1,0 +1,23 @@
+[
+  {
+    "id": 1744615660028,
+    "email": "peterkehindeademola@gmail.com",
+    "phone": "08163571677",
+    "items": [
+      {
+        "description": "generator",
+        "qty": 1,
+        "rate": 2000,
+        "amount": 2000
+      },
+      {
+        "description": "fan",
+        "qty": 2,
+        "rate": 4000,
+        "amount": 8000
+      }
+    ],
+    "total": 10000,
+    "date": "4/14/2025, 8:27:40 AM"
+  }
+]

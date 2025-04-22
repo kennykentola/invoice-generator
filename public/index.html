@@ -1,0 +1,76 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>D'MORE Invoice App</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  
+</head>
+<body>
+  <header class="header">
+    <img src="images/logo.png" alt="Company Logo" class="logo">
+    <!-- <img src="${logoURL}" alt="Company Logo" /> -->
+
+    <h1>D'MORE TECH ENGINEERING & TRADING COMPANY</h1>
+    <!-- <p class="motto">Motto: prendre le risque</p> -->
+    <button id="dark-mode-toggle" class="toggle-btn">🌙 </button>
+
+  </header>
+  <p class="motto"><strong style="font-size: 19px;font-weight: 900; ">Motto:</strong> prendre le risque</p>
+  <main class="main-content">
+    <section class="company-info">
+      <p class="company-info-p">📺 We deal in TVs, Home Theater, Freezers, Generators, Solar products, etc. Sales, Repair & Maintenance.</p>
+      <p class="company-info-p">📍 Iyana Barrack, Ojoo Ibadan</p>
+      <p class="company-info-p gmail">📧 <a href="mailto:olanilyi44@gmail.com">olanilyi44@gmail.com</a>, <a href="mailto:dmoretech44@gmail.com">dmoretech44@gmail.com</a></p>
+      <p class="company-info-p">📞 08142259939, 09030804218, 07057339815</p>
+      <p class="company-info-p">📝 RC: 3413570</p>
+    </section>
+
+    <h2 class="section-title">🧾 Cash Sales Invoice Generator</h2>
+
+    <form id="invoice-form" class="invoice-form">
+      <div class="form-row">
+        <label>Customer Name:
+          <input type="text" name="buyer" required>
+        </label>
+        <label>Customer Email:
+          <input type="email" name="email" required>
+        </label>
+        <label>WhatsApp Number:
+          <input type="tel" name="phone" placeholder="e.g., 2349012345678" required>
+        </label>
+      </div>
+
+      <div class="form-row">
+        <label>Customer Signature:
+          <input type="file" name="customerSign" accept="image/*" />
+        </label>
+        <span>Date: <strong id="today-date"></strong></span>
+      </div>
+
+      <div id="items-container" class="items-container"></div>
+      <button type="button" id="add-item" class="btn add-item">➕ Add Item</button>
+
+      <div class="total-display">
+        <h3>Total: ₦<span id="total-display">0</span></h3>
+      </div>
+
+      <button type="submit" class="btn submit-btn">📤 Generate & Send Invoice</button>
+    </form>
+
+    <section id="invoice-preview" style="display:none">
+      <!-- <h3>Invoice Preview</h3> -->
+      <div id="invoice-output" class="invoice-output"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>&copy; 2025 D'MORE TECH ENGINEERING. All rights reserved.</p>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
