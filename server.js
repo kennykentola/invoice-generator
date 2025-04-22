@@ -118,7 +118,7 @@ app.post('/api/invoice', async (req, res) => {
       to: email,
       cc: process.env.MAIL_CC || "",
       subject: "D'MORE TECH Invoice",
-      html: `<p>Dear ${buyer},<br>Please find your invoice attached as a PDF. Thank you!</p>`,
+      html: `<p>Dear ${buyer},<br>Please find your invoice attached as a PDF AND DOWNLOAD. Thank you!</p>`,
       attachments: [
         {
           filename: fileName,
