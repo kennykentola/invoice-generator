@@ -1,18 +1,11 @@
-require('dotenv').config();
-
-const express = require('express');
-const fs = require('fs');
-const cors = require('cors');
-const path = require('path');
 const nodemailer = require('nodemailer');
 const { ToWords } = require('to-words');
-const puppeteer = require('puppeteer');
+const PDFDocument = require('pdfkit');
+const fs = require('fs');
+const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Initialize toWords with Naira configuration
+// Initialize ToWords with Naira configuration
 const toWords = new ToWords({
   localeCode: 'en-NG',
   currencyOptions: {
@@ -27,124 +20,275 @@ const toWords = new ToWords({
   },
 });
 
-// Middleware setup
-app.use(cors());
-app.use(express.json({ limit: '20mb' }));
-app.use(express.static('public'));
+// Vercel serverless function
+module.exports = async (req, res) => {
+  // Restrict to POST requests
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
-// Invoice directory
-const invoicesDir = path.join(__dirname, 'invoices');
-if (!fs.existsSync(invoicesDir)) {
-  fs.mkdirSync(invoicesDir);
-}
-app.use('/invoices', express.static(invoicesDir));
-
-// Invoice API
-app.post('/api/invoice', async (req, res) => {
+  const startTime = Date.now();
   const { email, phone, items, total, customerSign, buyer } = req.body;
-  const id = uuidv4();
-  const fileName = `invoice_${id}.pdf`;
-  const filePath = path.join(invoicesDir, fileName);
-  const publicURL = `http://localhost:${PORT}/invoices/${fileName}`;
+
+  // Validate required fields
+  if (!email || !phone || !items || !total || !buyer) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
   const totalInWords = toWords.convert(total, { currency: true, ignoreDecimal: true });
+  const invoiceId = uuidv4(); // Generate unique invoice ID
+  const fileName = `invoice_${invoiceId}.pdf`;
 
   try {
-    console.log("Items received:", items);
+    // Initialize PDF document
+    const doc = new PDFDocument({
+      size: 'A4',
+      margin: 20,
+      bufferPages: true,
+    });
 
-    const logoBase64 = fs.readFileSync('./public/images/logo.png', 'base64');
-    const logoURL = `data:image/png;base64,${logoBase64}`;
+    const buffers = [];
+    doc.on('data', buffers.push.bind(buffers));
+    doc.on('end', async () => {
+      const pdfBuffer = Buffer.concat(buffers);
 
-    const electronicsBase64 = fs.readFileSync('./public/images/gen.jpg', 'base64');
-    const electronicsURL = `data:image/png;base64,${electronicsBase64}`;
+      // Configure Nodemailer transporter
+      const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          user: process.env.MAIL_SENDER,
+          pass: process.env.MAIL_PASS,
+        },
+        pool: true,
+      });
 
-    const generatorFanBase64 = fs.readFileSync('./public/images/fan.jpg', 'base64');
-    const generatorFanURL = `data:image/png;base64,${generatorFanBase64}`;
+      // Verify transporter
+      await transporter.verify();
 
-    const generatorhomeBase64 = fs.readFileSync('./public/images/home.png', 'base64');
-    const generatorhomeURL = `data:image/png;base64,${generatorhomeBase64}`;
+      // Email options
+      const mailOptions = {
+        from: process.env.MAIL_SENDER,
+        to: email,
+        cc: process.env.MAIL_CC || '',
+        subject: "D'MORE TECH Invoice",
+        html: `<p>Dear ${buyer},<br>Please find your invoice attached as a PDF. Thank you!</p>`,
+        attachments: [
+          {
+            filename: fileName,
+            content: pdfBuffer,
+            contentType: 'application/pdf',
+          },
+        ],
+      };
 
-    let managerSignURL = '';
+      // Send email
+      const info = await transporter.sendMail(mailOptions);
+      console.log(`✅ Email sent: ${info.messageId}`);
+
+      // Generate WhatsApp link (no download URL in serverless, instruct to check email)
+      const whatsappLink = `https://wa.me/${phone}?text=${encodeURIComponent(
+        `Hello ${buyer}, your invoice from D'MORE TECH Amount is ₦${total}. Please check your email for the invoice PDF.`
+      )}`;
+
+      // Generate PDF data URI for frontend download
+      const pdfDataUri = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
+
+      const endTime = Date.now();
+      console.log(`Request processed in ${endTime - startTime}ms`);
+
+      // Respond with success
+      res.status(200).json({
+        message: 'Invoice sent and PDF generated.',
+        whatsappLink,
+        downloadURL: pdfDataUri, // Use data URI instead of public URL
+        managerSign: '', // Manager signature handled in PDF
+      });
+    });
+
+    // PDF Content Generation
+    doc.font('Helvetica');
+
+    // Header: Images and Company Info
+    let logoBuffer, electronicsBuffer, generatorFanBuffer, generatorHomeBuffer, managerSignBuffer;
     try {
-      const managerSignBase64 = fs.readFileSync('./public/images/manager_signature.png', 'base64');
-      managerSignURL = `data:image/png;base64,${managerSignBase64}`;
+      logoBuffer = fs.readFileSync(path.join(__dirname, '..', 'public', 'images', 'logo.png'));
+      doc.image(logoBuffer, (doc.page.width - 80) / 2, 20, { width: 80 }); // Centered logo
     } catch (err) {
-      console.warn("Manager signature not found, falling back to frontend default:", err.message);
-      managerSignURL = '';
+      console.warn('Logo image not found:', err.message);
     }
 
-    const htmlContent = generateInvoiceHTML({
-      logoURL,
-      electronicsURL,
-      generatorFanURL,
-      generatorhomeURL,
-      buyer,
-      items,
-      total,
-      totalInWords,
-      customerSign,
-      managerSign: managerSignURL,
+    // Side images (left and right)
+    try {
+      electronicsBuffer = fs.readFileSync(path.join(__dirname, '..', 'public', 'images', 'gen.jpg'));
+      doc.image(electronicsBuffer, 20, 20, { width: 100 }); // Left side
+    } catch (err) {
+      console.warn('Electronics image not found:', err.message);
+    }
+    try {
+      generatorFanBuffer = fs.readFileSync(path.join(__dirname, '..', 'public', 'images', 'fan.jpg'));
+      generatorHomeBuffer = fs.readFileSync(path.join(__dirname, '..', 'public', 'images', 'home.png'));
+      doc.image(generatorFanBuffer, doc.page.width - 120, 20, { width: 100 }); // Right side
+      doc.image(generatorHomeBuffer, doc.page.width - 120, 130, { width: 100 }); // Right side below
+    } catch (err) {
+      console.warn('Generator images not found:', err.message);
+    }
+
+    // Company details
+    doc.moveDown(14); // Adjust position after images
+    doc.fontSize(18).text("D'MORE TECH ENGINEERING & TRADING COMPANY", { align: 'center' });
+    doc.fontSize(14).text("Motto: prendre le risque", { align: 'center' });
+    doc.fontSize(12).text(
+      "Deal with sales of electronics such as TVs, home theater, freezer, oven, microwave, generator, air conditioner, blender, solar products, etc. sales, repair and maintenance",
+      50,
+      doc.y,
+      { align: 'center', width: doc.page.width - 100 }
+    );
+    doc.fontSize(12).text("Office Address: Iyana Barack, Ojoo Ibadan", { align: 'center' });
+    doc.fontSize(12).text("Email: olanlyl14@gmail.com, dmoretech44@gmail.com", { align: 'center' });
+    doc.fontSize(12).text("Tel: 08142259939, 09030804218, 07057339815", { align: 'center' });
+    doc.fontSize(12).text("RC: 3413570", { align: 'center' });
+    doc.moveDown(2);
+
+    // Title with border
+    doc.fontSize(16).text("CASH SALES INVOICE", { align: 'center' });
+    doc.rect(50, doc.y - 20, doc.page.width - 100, 30).stroke(); // Border around title
+    doc.moveDown();
+
+    // Buyer and Date
+    const date = new Date();
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const year = date.getFullYear();
+
+    doc.fontSize(12);
+    const buyerY = doc.y;
+    doc.text(`TO: ${buyer}`, 50, buyerY);
+    doc.text(`DAY: ${day}`, 400, buyerY, { width: 50, align: 'center' });
+    doc.rect(400, buyerY - 5, 50, 20).stroke(); // Date box
+    doc.text(`MONTH: ${month}`, 460, buyerY, { width: 50, align: 'center' });
+    doc.rect(460, buyerY - 5, 50, 20).stroke();
+    doc.text(`YEAR: ${year}`, 520, buyerY, { width: 50, align: 'center' });
+    doc.rect(520, buyerY - 5, 50, 20).stroke();
+    doc.moveDown();
+
+    // Table Header
+    const tableTop = doc.y;
+    doc.font('Helvetica-Bold');
+    doc.text('S/N', 50, tableTop, { width: 30 });
+    doc.text('Description of Goods', 80, tableTop, { width: 200 });
+    doc.text('Qty', 280, tableTop, { width: 50, align: 'right' });
+    doc.text('Rate (₦)', 330, tableTop, { width: 80, align: 'right' });
+    doc.text('Amount (₦)', 410, tableTop, { width: 80, align: 'right' });
+
+    // Draw table header borders
+    doc.rect(50, tableTop - 5, 30, 20).fillAndStroke('#f0f0f0', '#000');
+    doc.rect(80, tableTop - 5, 200, 20).fillAndStroke('#f0f0f0', '#000');
+    doc.rect(280, tableTop - 5, 50, 20).fillAndStroke('#f0f0f0', '#000');
+    doc.rect(330, tableTop - 5, 80, 20).fillAndStroke('#f0f0f0', '#000');
+    doc.rect(410, tableTop - 5, 80, 20).fillAndStroke('#f0f0f0', '#000');
+    doc.fillColor('black'); // Reset fill color
+    doc.moveDown();
+
+    // Table Rows
+    doc.font('Helvetica');
+    let serialNumber = 1;
+    let yPosition = doc.y;
+    items.forEach((item) => {
+      doc.text(`${serialNumber++}`, 50, yPosition, { width: 30 });
+      doc.text(item.description || '', 80, yPosition, { width: 200 });
+      doc.text(item.qty || '', 280, yPosition, { width: 50, align: 'right' });
+      doc.text(item.rate ? Number(item.rate).toLocaleString('en-NG') : '', 330, yPosition, {
+        width: 80,
+        align: 'right',
+      });
+      doc.text(item.amount ? Number(item.amount).toLocaleString('en-NG') : '', 410, yPosition, {
+        width: 80,
+        align: 'right',
+      });
+      // Draw row borders
+      doc.rect(50, yPosition - 5, 30, 20).stroke();
+      doc.rect(80, yPosition - 5, 200, 20).stroke();
+      doc.rect(280, yPosition - 5, 50, 20).stroke();
+      doc.rect(330, yPosition - 5, 80, 20).stroke();
+      doc.rect(410, yPosition - 5, 80, 20).stroke();
+      yPosition += 20;
     });
 
-    const browser = await puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    });
-    const page = await browser.newPage();
-    await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
+    // Add two empty rows
+    for (let i = 0; i < 2; i++) {
+      doc.text(`${serialNumber++}`, 50, yPosition, { width: 30 });
+      doc.text('', 80, yPosition, { width: 200 });
+      doc.text('', 280, yPosition, { width: 50, align: 'right' });
+      doc.text('', 330, yPosition, { width: 80, align: 'right' });
+      doc.text('', 410, yPosition, { width: 80, align: 'right' });
+      // Draw row borders
+      doc.rect(50, yPosition - 5, 30, 20).stroke();
+      doc.rect(80, yPosition - 5, 200, 20).stroke();
+      doc.rect(280, yPosition - 5, 50, 20).stroke();
+      doc.rect(330, yPosition - 5, 80, 20).stroke();
+      doc.rect(410, yPosition - 5, 80, 20).stroke();
+      yPosition += 20;
+    }
 
-    await page.evaluateHandle('document.fonts.ready');
-    await page.pdf({
-      path: filePath,
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },
-      preferCSSPageSize: true,
-    });
+    // Total
+    doc.moveDown();
+    const totalText = `TOTAL ₦${Number(total).toLocaleString('en-NG')}`;
+    doc.text(totalText, 410, doc.y, { width: 80, align: 'right' });
+    doc.rect(410, doc.y - 5, 80, 20).stroke(); // Border around total
+    doc.moveDown();
+    doc.text(`Amount in words: ${totalInWords}`, 50, doc.y);
 
-    await browser.close();
+    // Note
+    doc.moveDown();
+    doc.fontSize(10).text(
+      'Please Note: Goods sold in good condition are not returnable or exchanged. Thanks for your patronage.',
+      { align: 'left' }
+    );
 
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.MAIL_SENDER,
-        pass: process.env.MAIL_PASS,
-      },
-    });
+    // Signatures
+    doc.moveDown(2);
+    const signY = doc.y;
 
-    await transporter.verify();
+    // Customer Signature
+    doc.text("Customer's Signature", 50, signY, { align: 'center', width: 200 });
+    if (customerSign && customerSign.startsWith('data:image/')) {
+      try {
+        const base64Data = customerSign.split(',')[1];
+        const customerSignBuffer = Buffer.from(base64Data, 'base64');
+        doc.image(customerSignBuffer, 50, signY + 20, { width: 150 });
+        doc.text('_____________________', 50, signY + 60, { width: 150, align: 'center' });
+      } catch (err) {
+        console.error('Error adding customer signature:', err.message);
+        doc.text('_____________________', 50, signY + 20, { width: 150, align: 'center' });
+      }
+    } else {
+      doc.text('No signature provided', 50, signY + 20, { width: 150, align: 'center' });
+    }
 
-    const mailOptions = {
-      from: process.env.MAIL_SENDER,
-      to: email,
-      cc: process.env.MAIL_CC || "",
-      subject: "D'MORE TECH Invoice",
-      html: `<p>Dear ${buyer},<br>Please find your invoice attached as a PDF AND DOWNLOAD. Thank you!</p>`,
-      attachments: [
-        {
-          filename: fileName,
-          path: filePath,
-          contentType: 'application/pdf',
-        },
-      ],
-    };
+    // Manager Signature
+    doc.text("Manager's Signature", 350, signY, { align: 'center', width: 200 });
+    try {
+      managerSignBuffer = fs.readFileSync(
+        path.join(__dirname, '..', 'public', 'images', 'manager_signature.png')
+      );
+      doc.image(managerSignBuffer, 350, signY + 20, { width: 150 });
+      doc.text('_____________________', 350, signY + 60, { width: 150, align: 'center' });
+    } catch (err) {
+      console.warn('Manager signature not found, using fallback text:', err.message);
+      doc
+        .fontSize(12)
+        .fillColor('blue')
+        .text("D'more Tech", 350, signY + 20, { width: 150, align: 'center' });
+    }
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log("✅ Email sent:", info.messageId);
-
-    const whatsappLink = `https://wa.me/${phone}?text=${encodeURIComponent(`Hello ${buyer}, your invoice from D'MORE TECH Amount is ₦${total}. you can download your invoce on this link <br> copy the link and paste to any browsers: ${publicURL}`)}`;
-
-    res.json({
-      message: "Invoice sent and PDF generated.",
-      whatsappLink,
-      downloadURL: publicURL,
-      managerSign: managerSignURL,
-    });
-
+    // Finalize PDF
+    doc.end();
   } catch (err) {
-    console.error("❌ Error generating invoice:", err);
-    res.status(500).json({ error: 'Failed to generate or send invoice.' });
+    const endTime = Date.now();
+    console.error(`Request failed after ${endTime - startTime}ms:`, err);
+    res.status(500).json({ error: `Failed to generate or send invoice: ${err.message}` });
   }
-});
+};
 
 // HTML generator
 function generateInvoiceHTML({ logoURL, electronicsURL,generatorhomeURL, generatorFanURL, buyer, items, total, totalInWords, customerSign, managerSign }) {
