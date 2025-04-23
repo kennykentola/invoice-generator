@@ -449,7 +449,7 @@ document.addEventListener("DOMContentLoaded", () => {
         total,
         items,
         customerSign: customerSignData,
-        templateType: "pdfkit",
+        templateType: "puppeteer",
       };
 
       const apiUrl = window.location.hostname.includes('localhost')
@@ -457,7 +457,7 @@ document.addEventListener("DOMContentLoaded", () => {
         : '/api/invoice';
 
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // Reduced to 10 seconds
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10-second timeout
 
       const response = await fetch(apiUrl, {
         method: "POST",
@@ -594,13 +594,7 @@ document.addEventListener("DOMContentLoaded", () => {
       statusMsg.style.color = "green";
 
     } catch (err) {
-      if (err.name === 'AbortError') {
-        statusMsg.textContent = `❌ Request timed out: The server took too long to respond. This may be due to high server load or resource limitations. Please try again later or contact support.`;
-      } else if (err.message.includes('Server error')) {
-        statusMsg.textContent = `❌ Server error: ${err.message}. Please check the server logs for more details.`;
-      } else {
-        statusMsg.textContent = `❌ Failed to send invoice: ${err.message}. Please try again.`;
-      }
+      statusMsg.textContent = `❌ Failed to send invoice: ${err.message}`;
       statusMsg.style.color = "red";
       console.error("Error:", err);
     }
