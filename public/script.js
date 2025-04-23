@@ -333,7 +333,6 @@
 //   };
 // });
 
-
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById('invoice-form');
   const totalDisplay = document.getElementById('total-display');
@@ -450,29 +449,35 @@ document.addEventListener("DOMContentLoaded", () => {
         total,
         items,
         customerSign: customerSignData,
-        templateType: "puppeteer",
+        templateType: "pdfkit",
       };
 
-      // Use the Vercel URL instead of localhost
       const apiUrl = window.location.hostname.includes('localhost')
         ? 'http://localhost:3000/api/invoice'
-        : '/api/invoice'; // Vercel will route this to server.js
+        : '/api/invoice';
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // Reduced to 10 seconds
 
       const response = await fetch(apiUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(`Server error: ${errorData.error || response.statusText}`);
+        const text = await response.text();
+        throw new Error(`Server error: ${response.status} - ${text}`);
       }
 
       const data = await response.json();
+      
       const whatsappLink = data.whatsappLink;
       const managerSign = data.managerSign;
-      pdfDataUri = data.pdfDataUri; // Store the server-generated PDF data URI
+      pdfDataUri = data.pdfDataUri;
 
       const today = new Date();
       const day = today.getDate().toString().padStart(2, "0");
@@ -574,7 +579,6 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("invoice-output").innerHTML = html;
       document.getElementById("invoice-preview").style.display = "block";
 
-      // Create buttons
       const whatsappBtn = `<a href="${whatsappLink}" target="_blank" class="btn">📲 WhatsApp</a>`;
       const saveBtn = `<button onclick="saveToLocal()" class="btn">💾 Save</button>`;
       const previewBtn = `<button onclick="previewPDF()" class="btn">👁️ Preview PDF</button>`;
@@ -590,13 +594,18 @@ document.addEventListener("DOMContentLoaded", () => {
       statusMsg.style.color = "green";
 
     } catch (err) {
-      statusMsg.textContent = `❌ Failed to send invoice: ${err.message}`;
+      if (err.name === 'AbortError') {
+        statusMsg.textContent = `❌ Request timed out: The server took too long to respond. This may be due to high server load or resource limitations. Please try again later or contact support.`;
+      } else if (err.message.includes('Server error')) {
+        statusMsg.textContent = `❌ Server error: ${err.message}. Please check the server logs for more details.`;
+      } else {
+        statusMsg.textContent = `❌ Failed to send invoice: ${err.message}. Please try again.`;
+      }
       statusMsg.style.color = "red";
       console.error("Error:", err);
     }
   });
 
-  // 📄 Preview PDF
   window.previewPDF = () => {
     if (!pdfDataUri) {
       alert("Please generate an invoice first!");
@@ -620,7 +629,6 @@ document.addEventListener("DOMContentLoaded", () => {
     previewWindow.document.close();
   };
 
-  // 💾 Save to local storage
   window.saveToLocal = () => {
     const invoiceData = document.getElementById("invoice-output").innerHTML;
     const invoices = JSON.parse(localStorage.getItem("invoices") || "[]");
@@ -629,7 +637,6 @@ document.addEventListener("DOMContentLoaded", () => {
     alert("✅ Invoice saved locally!");
   };
 
-  // 📄 Download PDF (using server-generated PDF)
   window.downloadPDF = () => {
     if (!pdfDataUri) {
       alert("Please generate an invoice first!");
