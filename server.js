@@ -399,7 +399,7 @@ app.post('/api/test-blob', async (req, res) => {
       throw new Error('Missing dmoretech_READ_WRITE_TOKEN');
     }
     const testData = Buffer.from('Hello World!');
-    const { url } = await put('articles/blob.txt', testData, {
+    const { url } = await put('test/blob.txt', testData, {
       access: 'public',
       token: process.env.dmoretech_READ_WRITE_TOKEN,
     });
@@ -820,7 +820,8 @@ function generateInvoiceHTML({ logoURL, electronicsURL, generatorFanURL, generat
         </div>
       </div>
     </body>
-    </html>`;
+    </html>
+  `;
 }
 
 // Start server

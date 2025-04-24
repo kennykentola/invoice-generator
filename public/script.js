@@ -283,7 +283,6 @@
 // });
 
 
-
 document.addEventListener("DOMContentLoaded", () => {
   const form = document.getElementById('invoice-form');
   const totalDisplay = document.getElementById('total-display');
@@ -417,14 +416,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
       let image = "";
       const file = el.querySelector('input[name="productImage"]').files[0];
-      if (file) image = await fileToBase64(file);
+      if (file) {
+        try {
+          image = await fileToBase64(file);
+        } catch (err) {
+          console.warn(`Failed to convert product image to Base64: ${err.message}`);
+        }
+      }
 
       items.push({ description, qty, rate, amount, image });
     }
 
     const totalWords = convertNumberToWords(total);
     const customerSignFile = customerSignInput.files[0];
-    customerSignData = customerSignFile ? await fileToBase64(customerSignFile) : "";
+    customerSignData = customerSignFile ? await fileToBase64(customerSignFile).catch(err => {
+      console.warn(`Failed to convert customer signature to Base64: ${err.message}`);
+      return "";
+    }) : "";
 
     const payload = {
       buyer,
@@ -445,8 +453,14 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Server error: ${errorData.error || response.statusText || 'Unknown error'}`);
+        let errorMessage = response.statusText || 'Unknown error';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (jsonErr) {
+          console.warn('Failed to parse server error JSON:', jsonErr);
+        }
+        throw new Error(`Server error: ${errorMessage} (Status: ${response.status})`);
       }
 
       const data = await response.json();
@@ -470,7 +484,7 @@ document.addEventListener("DOMContentLoaded", () => {
             .invoice-header h2 { margin: 5px 0; font-size: 18px; }
             .services { font-size: 12px; color: #444; text-align: center; margin-bottom: 5px; }
             .motto { font-size: 14px; color: #444; font-style: italic; text-align: center; margin-bottom: 5px; }
-            .contact { font-size: 12px; mailto: margin: 2px 0; }
+            .contact { font-size: 12px; margin: 2px 0; }
             .invoice-title { text-align: center; font-size: 16px; font-weight: bold; margin: 10px 0; }
             .invoice-meta { display: flex; justify-content: space-between; margin: 10px 0; font-size: 14px; }
             .meta-right { display: flex; gap: 10px; }
@@ -578,7 +592,12 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) {
       statusMsg.textContent = `❌ Failed to send invoice: ${err.message}`;
       statusMsg.style.color = "red";
-      console.error("Error:", err);
+      console.error("Invoice submission error:", {
+        message: err.message,
+        stack: err.stack,
+        status: response ? response.status : 'No response',
+        payload
+      });
     }
   });
 
