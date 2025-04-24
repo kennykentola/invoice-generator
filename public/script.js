@@ -455,10 +455,18 @@ document.addEventListener("DOMContentLoaded", () => {
       if (!response.ok) {
         let errorMessage = response.statusText || 'Unknown error';
         try {
-          const errorData = await response.json();
-          errorMessage = errorData.error || errorMessage;
-        } catch (jsonErr) {
-          console.warn('Failed to parse server error JSON:', jsonErr);
+          const text = await response.text();
+          try {
+            const errorData = JSON.parse(text);
+            errorMessage = errorData.error || errorMessage;
+          } catch (jsonErr) {
+            console.warn('Failed to parse server response as JSON:', jsonErr, 'Raw response:', text.slice(0, 200));
+            errorMessage = response.status === 404 
+              ? 'Invoice endpoint not found on server. Please check server deployment.'
+              : `Server returned non-JSON response: ${text.slice(0, 100)}...`;
+          }
+        } catch (textErr) {
+          console.warn('Failed to read server response text:', textErr);
         }
         throw new Error(`Server error: ${errorMessage} (Status: ${response.status})`);
       }
@@ -595,7 +603,9 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error("Invoice submission error:", {
         message: err.message,
         stack: err.stack,
-        payload
+        payload,
+        url: "/api/invoice",
+        timestamp: new Date().toISOString()
       });
     }
   });

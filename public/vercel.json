@@ -1,17 +1,19 @@
-
-
-  {
-    "functions": {
-      "api/*": {
-        "maxDuration": 30
-      }
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/server.js"
+    },
+    {
+      "source": "/:path*",
+      "destination": "/index.html"
+    }
+  ],
+  "functions": {
+    "server.js": {
+      "memory": 1024,
+      "maxDuration": 30
     }
   }
-  {
-    "functions": {
-      "api/*": {
-        "maxDuration": 30
-      }
-    },
-    "public": "public"
-  }
+}
+ 
