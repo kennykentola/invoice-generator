@@ -443,12 +443,26 @@ document.addEventListener("DOMContentLoaded", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
+    
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(`Server error: ${errorData.error || response.statusText || 'Unknown error'}`);
+        let errorMessage = response.statusText || 'Unknown error';
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.error || errorMessage;
+        } catch (jsonErr) {
+          console.warn('Failed to parse error JSON:', jsonErr);
+        }
+        throw new Error(`Server error: ${errorMessage} (Status: ${response.status})`);
       }
-
+    
+      const data = await response.json();
+      // ... rest of success handling ...
+    } catch (err) {
+      statusMsg.textContent = `❌ Failed to send invoice: ${err.message}`;
+      statusMsg.style.color = "red";
+      console.error("Error:", err);
+    }
+    
       const data = await response.json();
       const whatsappLink = data.whatsappLink;
       pdfDataUri = data.pdfDataUri;

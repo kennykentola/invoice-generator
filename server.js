@@ -388,13 +388,16 @@ app.get('/api/test-email', async (req, res) => {
 
     res.json({ message: 'Test email sent', messageId: info.messageId });
   } catch (err) {
-    console.error('❌ Test Email Error:', { message: err.message, stack: err.stack });
+    console.error('❌ Test Email Error:', { message: err.message, code: err.code, stack: err.stack });
     res.status(500).json({ error: `Failed to send test email: ${err.message}` });
   }
 });
 
 app.post('/api/test-blob', async (req, res) => {
   try {
+    if (!process.env.dmoretech_READ_WRITE_TOKEN) {
+      throw new Error('Missing dmoretech_READ_WRITE_TOKEN');
+    }
     const testData = Buffer.from('Hello World!');
     const { url } = await put('articles/blob.txt', testData, {
       access: 'public',
@@ -402,7 +405,7 @@ app.post('/api/test-blob', async (req, res) => {
     });
     res.json({ message: 'Blob upload successful', url });
   } catch (err) {
-    console.error('❌ Test Blob Error:', { message: err.message, stack: err.stack });
+    console.error('❌ Test Blob Error:', { message: err.message, code: err.code, stack: err.stack });
     res.status(500).json({ error: `Failed to upload to Blob: ${err.message}` });
   }
 });
@@ -426,14 +429,14 @@ app.post('/api/invoice', async (req, res) => {
   try {
     const { email, phone, items, total, customerSign, buyer, managerSign } = req.body;
     if (!email || !phone || !items || !total || !buyer) {
-      throw new Error('Missing required fields');
+      throw new Error('Missing required fields: email, phone, items, total, or buyer');
     }
 
     const id = uuidv4();
     const fileName = `invoice_${id}.json.gz`;
     const totalInWords = toWords.convert(total, { currency: true, ignoreDecimal: true });
 
-    // Load images
+    // Load images with fallback
     const readImage = (filePath, defaultBase64 = '') => {
       try {
         if (fs.existsSync(filePath)) {
@@ -475,12 +478,19 @@ app.post('/api/invoice', async (req, res) => {
 
     // Compress JSON
     const jsonString = JSON.stringify(invoiceData);
-    const compressedData = await gzip(jsonString);
+    const compressedData = await gzip(jsonString).catch(err => {
+      throw new Error(`Gzip compression failed: ${err.message}`);
+    });
 
     // Upload to Vercel Blob
+    if (!process.env.dmoretech_READ_WRITE_TOKEN) {
+      throw new Error('Missing dmoretech_READ_WRITE_TOKEN environment variable');
+    }
     const { url } = await put(fileName, compressedData, {
       access: 'public',
       token: process.env.dmoretech_READ_WRITE_TOKEN,
+    }).catch(err => {
+      throw new Error(`Blob upload failed: ${err.message}`);
     });
 
     // Create download link
@@ -512,7 +522,9 @@ app.post('/api/invoice', async (req, res) => {
       `,
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    const info = await transporter.sendMail(mailOptions).catch(err => {
+      throw new Error(`Email sending failed: ${err.message}`);
+    });
     console.log("✅ Email sent:", info.messageId);
 
     // Generate PDF for preview
@@ -529,24 +541,37 @@ app.post('/api/invoice', async (req, res) => {
       managerSign: managerSignBase64 ? `data:image/png;base64,${managerSignBase64}` : '',
     });
 
-    const browser = await puppeteer.launch({
-      args: chrome.args,
-      executablePath: await chrome.executablePath,
-      headless: chrome.headless,
-    }).catch(err => {
+    let browser;
+    try {
+      browser = await puppeteer.launch({
+        args: chrome.args,
+        executablePath: await chrome.executablePath,
+        headless: chrome.headless,
+      });
+    } catch (err) {
       throw new Error(`Puppeteer launch failed: ${err.message}`);
-    });
+    }
 
-    const page = await browser.newPage();
-    await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
-    await page.evaluateHandle('document.fonts.ready');
+    const page = await browser.newPage().catch(err => {
+      throw new Error(`Browser new page failed: ${err.message}`);
+    });
+    await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' }).catch(err => {
+      throw new Error(`Set content failed: ${err.message}`);
+    });
+    await page.evaluateHandle('document.fonts.ready').catch(err => {
+      throw new Error(`Font loading failed: ${err.message}`);
+    });
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
       margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },
       preferCSSPageSize: true,
+    }).catch(err => {
+      throw new Error(`PDF generation failed: ${err.message}`);
     });
-    await browser.close();
+    await browser.close().catch(err => {
+      console.warn(`Browser close failed: ${err.message}`);
+    });
 
     const pdfDataUri = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
 
@@ -562,8 +587,15 @@ app.post('/api/invoice', async (req, res) => {
   } catch (err) {
     console.error("❌ Detailed Error in /api/invoice:", {
       message: err.message,
+      code: err.code,
       stack: err.stack,
       requestBody: req.body,
+      envVars: {
+        hasToken: !!process.env.dmoretech_READ_WRITE_TOKEN,
+        hasMailSender: !!process.env.MAIL_SENDER,
+        hasMailPass: !!process.env.MAIL_PASS,
+        logoUrl: process.env.LOGO_URL,
+      },
     });
     res.status(500).json({ error: `Failed to generate or send invoice: ${err.message}` });
   }
@@ -575,13 +607,22 @@ app.get('/api/invoice/:id', async (req, res) => {
     const { id } = req.params;
     const fileName = `invoice_${id}.json.gz`;
 
-    const blob = await get(fileName, { token: process.env.dmoretech_READ_WRITE_TOKEN });
+    if (!process.env.dmoretech_READ_WRITE_TOKEN) {
+      throw new Error('Missing dmoretech_READ_WRITE_TOKEN environment variable');
+    }
+    const blob = await get(fileName, { token: process.env.dmoretech_READ_WRITE_TOKEN }).catch(err => {
+      throw new Error(`Blob download failed: ${err.message}`);
+    });
     if (!blob) {
       return res.status(404).json({ error: 'Invoice not found' });
     }
 
-    const compressedData = await blob.arrayBuffer();
-    const decompressedData = await gunzip(Buffer.from(compressedData));
+    const compressedData = await blob.arrayBuffer().catch(err => {
+      throw new Error(`Blob arrayBuffer failed: ${err.message}`);
+    });
+    const decompressedData = await gunzip(Buffer.from(compressedData)).catch(err => {
+      throw new Error(`Gunzip decompression failed: ${err.message}`);
+    });
     const invoiceData = JSON.parse(decompressedData.toString());
 
     const htmlContent = generateInvoiceHTML({
@@ -597,24 +638,37 @@ app.get('/api/invoice/:id', async (req, res) => {
       managerSign: invoiceData.managerSignBase64 ? `data:image/png;base64,${invoiceData.managerSignBase64}` : '',
     });
 
-    const browser = await puppeteer.launch({
-      args: chrome.args,
-      executablePath: await chrome.executablePath,
-      headless: chrome.headless,
-    }).catch(err => {
+    let browser;
+    try {
+      browser = await puppeteer.launch({
+        args: chrome.args,
+        executablePath: await chrome.executablePath,
+        headless: chrome.headless,
+      });
+    } catch (err) {
       throw new Error(`Puppeteer launch failed: ${err.message}`);
-    });
+    }
 
-    const page = await browser.newPage();
-    await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
-    await page.evaluateHandle('document.fonts.ready');
+    const page = await browser.newPage().catch(err => {
+      throw new Error(`Browser new page failed: ${err.message}`);
+    });
+    await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' }).catch(err => {
+      throw new Error(`Set content failed: ${err.message}`);
+    });
+    await page.evaluateHandle('document.fonts.ready').catch(err => {
+      throw new Error(`Font loading failed: ${err.message}`);
+    });
     const pdfBuffer = await page.pdf({
       format: 'A4',
       printBackground: true,
       margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },
       preferCSSPageSize: true,
+    }).catch(err => {
+      throw new Error(`PDF generation failed: ${err.message}`);
     });
-    await browser.close();
+    await browser.close().catch(err => {
+      console.warn(`Browser close failed: ${err.message}`);
+    });
 
     res.set({
       'Content-Type': 'application/pdf',
@@ -625,6 +679,7 @@ app.get('/api/invoice/:id', async (req, res) => {
   } catch (err) {
     console.error("❌ Detailed Error in /api/invoice/:id:", {
       message: err.message,
+      code: err.code,
       stack: err.stack,
       params: req.params,
     });
