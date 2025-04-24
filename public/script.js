@@ -595,7 +595,6 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error("Invoice submission error:", {
         message: err.message,
         stack: err.stack,
-        status: response ? response.status : 'No response',
         payload
       });
     }
