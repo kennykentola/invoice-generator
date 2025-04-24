@@ -346,7 +346,7 @@ const gunzip = util.promisify(zlib.gunzip);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize toWords with Naira configuration
+// Initialize toWords
 const toWords = new ToWords({
   localeCode: 'en-NG',
   currencyOptions: {
@@ -357,41 +357,104 @@ const toWords = new ToWords({
   },
 });
 
-// Middleware setup
+// Middleware
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Serve the frontend (index.html)
+// Serve frontend
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Invoice API - Store JSON and send link
+// Test endpoints
+app.get('/api/test-email', async (req, res) => {
+  try {
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.MAIL_SENDER,
+        pass: process.env.MAIL_PASS,
+      },
+    });
+
+    await transporter.verify();
+    const info = await transporter.sendMail({
+      from: process.env.MAIL_SENDER,
+      to: process.env.MAIL_SENDER,
+      subject: 'Test Email from D\'MORE TECH',
+      html: '<p>This is a test email.</p>',
+    });
+
+    res.json({ message: 'Test email sent', messageId: info.messageId });
+  } catch (err) {
+    console.error('❌ Test Email Error:', { message: err.message, stack: err.stack });
+    res.status(500).json({ error: `Failed to send test email: ${err.message}` });
+  }
+});
+
+app.post('/api/test-blob', async (req, res) => {
+  try {
+    const testData = Buffer.from('Hello World!');
+    const { url } = await put('articles/blob.txt', testData, {
+      access: 'public',
+      token: process.env.dmoretech_READ_WRITE_TOKEN,
+    });
+    res.json({ message: 'Blob upload successful', url });
+  } catch (err) {
+    console.error('❌ Test Blob Error:', { message: err.message, stack: err.stack });
+    res.status(500).json({ error: `Failed to upload to Blob: ${err.message}` });
+  }
+});
+
+app.get('/api/test-image', (req, res) => {
+  try {
+    const logoPath = path.join(__dirname, 'public/images/logo.png');
+    if (fs.existsSync(logoPath)) {
+      res.sendFile(logoPath);
+    } else {
+      res.status(404).json({ error: 'Image not found' });
+    }
+  } catch (err) {
+    console.error('❌ Test Image Error:', { message: err.message, stack: err.stack });
+    res.status(500).json({ error: `Failed to read image: ${err.message}` });
+  }
+});
+
+// Invoice POST endpoint
 app.post('/api/invoice', async (req, res) => {
   try {
     const { email, phone, items, total, customerSign, buyer, managerSign } = req.body;
+    if (!email || !phone || !items || !total || !buyer) {
+      throw new Error('Missing required fields');
+    }
+
     const id = uuidv4();
     const fileName = `invoice_${id}.json.gz`;
     const totalInWords = toWords.convert(total, { currency: true, ignoreDecimal: true });
 
-    // Load images as base64 with fallback
+    // Load images
     const readImage = (filePath, defaultBase64 = '') => {
       try {
-        return Buffer.from(fs.readFileSync(filePath)).toString('base64');
+        if (fs.existsSync(filePath)) {
+          return Buffer.from(fs.readFileSync(filePath)).toString('base64');
+        }
+        console.warn(`Image not found: ${filePath}`);
+        return defaultBase64;
       } catch (err) {
         console.warn(`Failed to read ${filePath}: ${err.message}`);
         return defaultBase64;
       }
     };
 
+    const logoURL = process.env.LOGO_URL || 'http://localhost:3000/images/logo.png';
     const logoBase64 = readImage(path.join(__dirname, 'public/images/logo.png'));
     const electronicsBase64 = readImage(path.join(__dirname, 'public/images/gen.jpg'));
     const generatorFanBase64 = readImage(path.join(__dirname, 'public/images/fan.jpg'));
     const generatorhomeBase64 = readImage(path.join(__dirname, 'public/images/home.png'));
     const managerSignBase64 = readImage(path.join(__dirname, 'public/images/manager_signature.png'));
 
-    // Prepare invoice data as JSON
+    // Prepare invoice data
     const invoiceData = {
       id,
       buyer,
@@ -401,6 +464,7 @@ app.post('/api/invoice', async (req, res) => {
       total,
       totalInWords,
       customerSign,
+      logoURL,
       logoBase64,
       electronicsBase64,
       generatorFanBase64,
@@ -416,7 +480,7 @@ app.post('/api/invoice', async (req, res) => {
     // Upload to Vercel Blob
     const { url } = await put(fileName, compressedData, {
       access: 'public',
-      token: process.env.BLOB_READ_WRITE_TOKEN,
+      token: process.env.dmoretech_READ_WRITE_TOKEN,
     });
 
     // Create download link
@@ -431,16 +495,14 @@ app.post('/api/invoice', async (req, res) => {
       },
     });
 
-    try {
-      await transporter.verify();
-    } catch (err) {
+    await transporter.verify().catch(err => {
       throw new Error(`Email transporter verification failed: ${err.message}`);
-    }
+    });
 
     const mailOptions = {
       from: process.env.MAIL_SENDER,
       to: email,
-      cc: process.env.MAIL_CC || '',
+      cc: process.env.MAIL_SENDER,
       subject: "D'MORE TECH Invoice",
       html: `
         <p>Dear ${buyer},</p>
@@ -453,9 +515,9 @@ app.post('/api/invoice', async (req, res) => {
     const info = await transporter.sendMail(mailOptions);
     console.log("✅ Email sent:", info.messageId);
 
-    // Generate PDF for frontend preview
+    // Generate PDF for preview
     const htmlContent = generateInvoiceHTML({
-      logoURL: logoBase64 ? `data:image/png;base64,${logoBase64}` : '',
+      logoURL,
       electronicsURL: electronicsBase64 ? `data:image/png;base64,${electronicsBase64}` : '',
       generatorFanURL: generatorFanBase64 ? `data:image/png;base64,${generatorFanBase64}` : '',
       generatorhomeURL: generatorhomeBase64 ? `data:image/png;base64,${generatorhomeBase64}` : '',
@@ -471,7 +533,10 @@ app.post('/api/invoice', async (req, res) => {
       args: chrome.args,
       executablePath: await chrome.executablePath,
       headless: chrome.headless,
+    }).catch(err => {
+      throw new Error(`Puppeteer launch failed: ${err.message}`);
     });
+
     const page = await browser.newPage();
     await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
     await page.evaluateHandle('document.fonts.ready');
@@ -495,19 +560,22 @@ app.post('/api/invoice', async (req, res) => {
       managerSign: managerSignBase64 ? `data:image/png;base64,${managerSignBase64}` : '',
     });
   } catch (err) {
-    console.error("❌ Error generating invoice:", err);
+    console.error("❌ Detailed Error in /api/invoice:", {
+      message: err.message,
+      stack: err.stack,
+      requestBody: req.body,
+    });
     res.status(500).json({ error: `Failed to generate or send invoice: ${err.message}` });
   }
 });
 
-// Serve PDF
+// Invoice GET endpoint
 app.get('/api/invoice/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const fileName = `invoice_${id}.json.gz`;
 
-    // Retrieve compressed JSON
-    const blob = await get(fileName, { token: process.env.BLOB_READ_WRITE_TOKEN });
+    const blob = await get(fileName, { token: process.env.dmoretech_READ_WRITE_TOKEN });
     if (!blob) {
       return res.status(404).json({ error: 'Invoice not found' });
     }
@@ -516,9 +584,8 @@ app.get('/api/invoice/:id', async (req, res) => {
     const decompressedData = await gunzip(Buffer.from(compressedData));
     const invoiceData = JSON.parse(decompressedData.toString());
 
-    // Generate PDF
     const htmlContent = generateInvoiceHTML({
-      logoURL: invoiceData.logoBase64 ? `data:image/png;base64,${invoiceData.logoBase64}` : '',
+      logoURL: invoiceData.logoURL,
       electronicsURL: invoiceData.electronicsBase64 ? `data:image/png;base64,${invoiceData.electronicsBase64}` : '',
       generatorFanURL: invoiceData.generatorFanBase64 ? `data:image/png;base64,${invoiceData.generatorFanBase64}` : '',
       generatorhomeURL: invoiceData.generatorhomeBase64 ? `data:image/png;base64,${invoiceData.generatorhomeBase64}` : '',
@@ -534,7 +601,10 @@ app.get('/api/invoice/:id', async (req, res) => {
       args: chrome.args,
       executablePath: await chrome.executablePath,
       headless: chrome.headless,
+    }).catch(err => {
+      throw new Error(`Puppeteer launch failed: ${err.message}`);
     });
+
     const page = await browser.newPage();
     await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
     await page.evaluateHandle('document.fonts.ready');
@@ -553,7 +623,11 @@ app.get('/api/invoice/:id', async (req, res) => {
     });
     res.send(pdfBuffer);
   } catch (err) {
-    console.error("❌ Error serving invoice:", err);
+    console.error("❌ Detailed Error in /api/invoice/:id:", {
+      message: err.message,
+      stack: err.stack,
+      params: req.params,
+    });
     res.status(500).json({ error: `Failed to generate PDF: ${err.message}` });
   }
 });
@@ -694,7 +768,7 @@ function generateInvoiceHTML({ logoURL, electronicsURL, generatorFanURL, generat
     </html>`;
 }
 
-// Start the server
+// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
