@@ -292,11 +292,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const customerSignInput = document.querySelector('[name="customerSign"]');
 
   const logoData = "images/logo.png";
-  const managerSignData = "images/gen.jpg";
+  const managerSignData = "images/manager_signature.png";
   let customerSignData = "";
-  let pdfDataUri = ""; // Store PDF for preview and download
+  let pdfDataUri = "";
 
-  // 🌙 Dark Mode Setup
+  // Dark Mode Setup
   const darkToggle = document.getElementById("dark-mode-toggle");
   if (localStorage.getItem("dark-mode") === "true") {
     document.body.classList.add("dark");
@@ -378,7 +378,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   document.getElementById("add-item").addEventListener("click", addItem);
-  addItem(); // Initial row
+  addItem();
 
   function calculateTotal() {
     const items = [...document.querySelectorAll(".item")];
@@ -444,7 +444,11 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify(payload),
       });
 
-      if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(`Server error: ${errorData.error || response.statusText || 'Unknown error'}`);
+      }
+
       const data = await response.json();
       const whatsappLink = data.whatsappLink;
       pdfDataUri = data.pdfDataUri;
@@ -466,7 +470,7 @@ document.addEventListener("DOMContentLoaded", () => {
             .invoice-header h2 { margin: 5px 0; font-size: 18px; }
             .services { font-size: 12px; color: #444; text-align: center; margin-bottom: 5px; }
             .motto { font-size: 14px; color: #444; font-style: italic; text-align: center; margin-bottom: 5px; }
-            .contact { font-size: 12px; margin: 2px 0; }
+            .contact { font-size: 12px; mailto: margin: 2px 0; }
             .invoice-title { text-align: center; font-size: 16px; font-weight: bold; margin: 10px 0; }
             .invoice-meta { display: flex; justify-content: space-between; margin: 10px 0; font-size: 14px; }
             .meta-right { display: flex; gap: 10px; }
@@ -578,7 +582,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  // 📄 Preview PDF
+  // Preview PDF
   window.previewPDF = () => {
     if (!pdfDataUri) {
       alert("No PDF available for preview.");
@@ -602,7 +606,7 @@ document.addEventListener("DOMContentLoaded", () => {
     previewWindow.document.close();
   };
 
-  // 💾 Save to local storage
+  // Save to local storage
   window.saveToLocal = () => {
     const invoiceData = document.getElementById("invoice-output").innerHTML;
     const invoices = JSON.parse(localStorage.getItem("invoices") || "[]");
