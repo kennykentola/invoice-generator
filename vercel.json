@@ -1,23 +1,27 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "index.html",
-      "use": "@vercel/static"
-    },
-    {
-      "src": "api/invoice.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/invoice",
-      "dest": "/api/invoice.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
-    }
-  ]
-}
+	"version": 2,
+	"builds": [
+	  {
+		"src": "api/**/*.js",
+		"use": "@vercel/node"
+	  },
+	  {
+		"src": "public/**/*",
+		"use": "@vercel/static"
+	  }
+	],
+	"routes": [
+	  {
+		"src": "/api/(.*)",
+		"dest": "/api/$1"
+	  },
+	  {
+		"src": "/(script.js|style.css|images/.*)",
+		"dest": "/public/$1"
+	  },
+	  {
+		"src": "/(.*)",
+		"dest": "/public/index.html"
+	  }
+	]
+  }

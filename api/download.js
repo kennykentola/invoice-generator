@@ -1,29 +1,18 @@
-const fs = require('fs');
-const path = require('path');
+const { pdfStorage } = require('./invoice');
 
-const invoicesDir = path.join(__dirname, '..', 'invoices');
-
-module.exports = async (req, res) => {
+module.exports = (req, res) => {
   const { id } = req.query;
-  if (!id) {
-    return res.status(400).json({ error: 'Missing invoice id' });
+  const pdfBase64 = pdfStorage.get(id);
+
+  if (!pdfBase64) {
+    return res.status(404).json({ error: 'Invoice not found or expired' });
   }
 
-  const fileName = `invoice_${id}.pdf`;
-  const filePath = path.join(invoicesDir, fileName);
+  const pdfBuffer = Buffer.from(pdfBase64, 'base64');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename=invoice_${id}.pdf`);
+  res.send(pdfBuffer);
 
-  try {
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Invoice not found or expired' });
-    }
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=${fileName}`);
-
-    const fileStream = fs.createReadStream(filePath);
-    fileStream.pipe(res);
-  } catch (err) {
-    console.error('Error serving invoice:', err);
-    res.status(500).json({ error: 'Failed to serve invoice' });
-  }
+  // Clean up
+  pdfStorage.delete(id);
 };
