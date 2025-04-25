@@ -541,7 +541,14 @@
 
 
 
-
+// At the top of server.js
+console.log("Starting server...");
+try {
+  require('dotenv').config();
+  // ... rest of server.js
+} catch (err) {
+  console.error("Server startup error:", err);
+}
 // server.js (for local development only)
 require('dotenv').config();
 const express = require('express');
@@ -552,7 +559,7 @@ const puppeteer = require('puppeteer');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3000;
 
 // Initialize toWords with Naira configuration
 const toWords = new ToWords({
@@ -570,6 +577,11 @@ app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 app.use(express.static('public'));
 
+
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+app.get('/', (req, res) => {
+  res.sendFile('index.html', { root: 'public' });
+});
 // In-memory storage for PDFs (temporary)
 const pdfStorage = new Map();
 
@@ -622,7 +634,7 @@ app.post('/api/invoice', async (req, res) => {
     await browser.close();
 
 
-    app.get('/favicon.ico', (req, res) => res.status(204).end());
+   
     // Store PDF in memory
     const pdfBase64 = pdfBuffer.toString('base64');
     pdfStorage.set(id, pdfBase64);

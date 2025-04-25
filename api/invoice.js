@@ -1,12 +1,11 @@
-// /api/invoice.js
-import { v4 as uuidv4 } from 'uuid';
-import nodemailer from 'nodemailer';
-import { ToWords } from 'to-words';
-import puppeteer from 'puppeteer-core';
-import chrome from 'chrome-aws-lambda';
+require('dotenv').config();
+const { v4: uuidv4 } = require('uuid');
+const nodemailer = require('nodemailer');
+const { ToWords } = require('to-words');
+const wkhtmltopdf = require('wkhtmltopdf');
 
 // In-memory storage for PDFs (temporary; use S3 for production)
-export const pdfStorage = new Map();
+const pdfStorage = new Map();
 
 const toWords = new ToWords({
   localeCode: 'en-NG',
@@ -18,7 +17,7 @@ const toWords = new ToWords({
   },
 });
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -50,26 +49,14 @@ export default async function handler(req, res) {
       managerSign: managerSignURL,
     });
 
-    // Launch Puppeteer
-    const browser = await puppeteer.launch({
-      args: chrome.args,
-      executablePath: await chrome.executablePath,
-      headless: true,
-    });
-
-    const page = await browser.newPage();
-    await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
-    await page.evaluateHandle('document.fonts.ready');
-
     // Generate PDF as buffer
-    const pdfBuffer = await page.pdf({
-      format: 'A4',
-      printBackground: true,
-      margin: { top: '20px', right: '20px', bottom: '20px', left: '20px' },
-      preferCSSPageSize: true,
+    const pdfBuffer = await new Promise((resolve, reject) => {
+      const buffers = [];
+      const stream = wkhtmltopdf(htmlContent, { pageSize: 'A4', marginTop: '20px', marginRight: '20px', marginBottom: '20px', marginLeft: '20px' });
+      stream.on('data', chunk => buffers.push(chunk));
+      stream.on('end', () => resolve(Buffer.concat(buffers)));
+      stream.on('error', reject);
     });
-
-    await browser.close();
 
     // Convert PDF to Base64 and store
     const pdfBase64 = pdfBuffer.toString('base64');
@@ -114,7 +101,7 @@ export default async function handler(req, res) {
     console.error("❌ Error generating invoice:", err);
     res.status(500).json({ error: `Failed to generate or send invoice: ${err.message}` });
   }
-}
+};
 
 function generateInvoiceHTML({ logoURL, electronicsURL, generatorhomeURL, generatorFanURL, buyer, items, total, totalInWords, customerSign, managerSign }) {
   const date = new Date();
@@ -259,4 +246,4 @@ function generateInvoiceHTML({ logoURL, electronicsURL, generatorhomeURL, genera
     </div>
   </body>
   </html>`;
-}
+};

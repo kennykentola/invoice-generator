@@ -1,0 +1,19 @@
+name: Cleanup Old Invoices
+
+on:
+  schedule:
+    - cron: '0 0 */80 * *' # Runs every 80 days at midnight UTC
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm install
+      - name: Run cleanup script
+        run: node scripts/cleanup.js
