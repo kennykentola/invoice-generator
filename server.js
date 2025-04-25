@@ -552,7 +552,7 @@ const puppeteer = require('puppeteer');
 const { v4: uuidv4 } = require('uuid');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 
 // Initialize toWords with Naira configuration
 const toWords = new ToWords({
@@ -621,6 +621,8 @@ app.post('/api/invoice', async (req, res) => {
 
     await browser.close();
 
+
+    app.get('/favicon.ico', (req, res) => res.status(204).end());
     // Store PDF in memory
     const pdfBase64 = pdfBuffer.toString('base64');
     pdfStorage.set(id, pdfBase64);
